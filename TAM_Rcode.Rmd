@@ -1,0 +1,260 @@
+---
+title: "TAM_1102"
+author: "vicshi94"
+date: "2023-11-02"
+output:
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	paged.print = FALSE
+)
+```
+
+## 导入数据及数据清洗
+
+```{r import dataset}
+library(readxl)
+# file_path <- file.choose()
+
+file_path <-'../data/TAM_v1_1027.xlsx'
+
+if (endsWith(file_path, 'csv')) {
+  raw_sample <- read.csv(file_path) # import csv file
+} else {
+raw_sample <- read_excel(file_path, sheet='Sheet1') # import excel file
+}
+```
+
+```{r data clean}
+summary(as.factor(raw_sample$Location))
+HK_sample <- raw_sample[which(raw_sample$Location=='HK'),]
+```
+
+## 样本描述性分析
+
+```{r sample description}
+library(dplyr)
+library(psych)
+sprintf('年龄: M = %.2f, SD = %.2f',
+        describe(HK_sample$Age)$mean, 
+        describe(HK_sample$Age)$sd
+        )
+sprintf(
+  '答题时间: Mdn = %.2f, IQR = %.2f to %.2f',
+  quantile(HK_sample$Time)[3], # Mdn
+  quantile(HK_sample$Time)[2], # 25%
+  quantile(HK_sample$Time)[4]  # 75%
+)
+sprintf(
+  '性别: 男 = %d (%.2f%%), 女 = %d (%.2f%%)',
+  summary(as.factor(HK_sample$Gender))[1], 
+  summary(as.factor(HK_sample$Gender))[1]/count(HK_sample)*100,
+  summary(as.factor(HK_sample$Gender))[2], 
+  summary(as.factor(HK_sample$Gender))[2]/count(HK_sample)*100
+)
+summary(as.factor(HK_sample$Institute))
+sprintf(
+  'Study Programme: Undergraduate = %d (%.2f%%), TPG = %d (%.2f%%), RPG = %d (%.2f%%)',
+  summary(as.factor(HK_sample$EDU))[1], 
+  summary(as.factor(HK_sample$EDU))[1]/count(HK_sample)*100,
+  summary(as.factor(HK_sample$EDU))[2], 
+  summary(as.factor(HK_sample$EDU))[2]/count(HK_sample)*100,
+  summary(as.factor(HK_sample$EDU))[3], 
+  summary(as.factor(HK_sample$EDU))[3]/count(HK_sample)*100
+)
+```
+
+## 信度分析
+
+```{r Reliability}
+## Cronbach alpha
+library(psych)
+# TAM Variable: Perceived Ease of Use
+PEOU <- select(HK_sample, PEOU_1, PEOU_2, PEOU_3, PEOU_4)
+print('========== PEOU ===========')
+summary(alpha(PEOU),digits=3)
+# TAM Variable: Perceived Usefulness
+PU <- select(HK_sample, PU_1, PU_2, PU_3, PU_4, PU_5)
+print('========== PU ===========')
+summary(alpha(PU),digits=3)
+# TAM Variable: Attitude
+AT <- select(HK_sample, AT_1, AT_2, AT_3, AT_4, AT_5)
+print('========== AT ===========')
+summary(alpha(AT),digits=3)
+# TAM Variable: Behavioral Intention
+BI <- select(HK_sample, BI_1, BI_2, BI_3)
+print('========== BI ===========')
+summary(alpha(BI),digits=3)
+        
+# Spearman-Brown reliability + Standardized alpha for two-item scale
+# (Eisinga et al., 2013)
+library(splithalfr)
+# Exogenous Variable: Social Media Exposure
+SME <- select(HK_sample, Exposure_1, Exposure_2)
+print('========== SME ===========')
+summary(alpha(SME),digits=3)
+sprintf('Spearman-Brown: %.2f',
+        spearman_brown(SME$Exposure_1,SME$Exposure_2)
+)
+
+# Exogenous Variable: Perceived Support
+PS <- select(HK_sample, PS_School, PS_Lecturer)
+print('========== PS ===========')
+summary(alpha(PS),digits=3)
+sprintf('Spearman-Brown: %.2f',
+        spearman_brown(PS$PS_School,PS$PS_Lecturer)
+)
+
+```
+
+## CFA
+
+```{r measurement model, warning=FALSE}
+library(lavaan)
+library(semTools)
+library(lavaanPlot)
+
+cfa_model_1 <- '
+    PEOU =~ PEOU_1 + PEOU_2 + PEOU_3 + PEOU_4
+    PU =~ PU_1 + PU_4 + PU_2 + PU_3 + PU_5
+    AT =~ AT_1 + AT_2 + AT_3 + AT_4 + AT_5
+    BI =~ BI_1 + BI_2 + BI_3
+    SME =~ f1*Exposure_1 + f1*Exposure_2
+    PS =~ f2*PS_School + f2*PS_Lecturer
+'
+cfa_fit_1 <- cfa(cfa_model_1,data=HK_sample)
+round(
+  fitMeasures(
+    cfa_fit_1, 
+    c("chisq","df","pvalue","cfi","ifi","ecvi","rmsea","gfi","tli")
+    ),2)
+```
+
+```{r revised model}
+cfa_model_2 <- '
+    PEOU =~ PEOU_1 + PEOU_2 + PEOU_3 + PEOU_4
+    PU =~ PU_2 + PU_3 + PU_5
+    AT =~ AT_1 + AT_2 + AT_4
+    BI =~ BI_1 + BI_2 + BI_3
+    SME =~ f1*Exposure_1 + f1*Exposure_2
+    PS =~ f2*PS_School + f2*PS_Lecturer
+'
+cfa_fit_2 <- cfa(cfa_model_2,data=HK_sample)
+round(
+  fitMeasures(
+    cfa_fit_2, 
+    c("chisq","df","pvalue","cfi","ifi","ecvi","rmsea","gfi","tli")
+    ),2)
+```
+
+```{r construct reliability}
+# TAM Variable: Perceived Usefulness
+PU <- select(HK_sample, PU_2, PU_3, PU_5)
+print('========== PU ===========')
+summary(alpha(PU),digits=3)
+# TAM Variable: Attitude
+AT <- select(HK_sample, AT_1, AT_2, AT_4)
+print('========== AT ===========')
+summary(alpha(AT),digits=3)
+```
+
+```{r factor loading}
+round(inspect(cfa_fit_2,what="std")$lambda,2)
+```
+```{r CR and AVE, paged.print=FALSE}
+round(reliability(cfa_fit_2,what = c('omega','ave')),2)
+round(sqrt(reliability(cfa_fit_2,what = c('ave'))),2)
+```
+
+```{r Discriminant Validity}
+round(lavInspect(cfa_fit_2, what = 'cor.lv')^2,2)
+```
+```{r modindices, include=FALSE}
+modindices(cfa_fit_2, sort = TRUE, maximum.number = 10,op = '~~')
+```
+
+```{r summary}
+summary(cfa_fit_2, fit.measures=T,standardized=T,ci=T,nd=2L)
+```
+
+## SEM: Path analysis
+```{r Control Variables}
+HK_sample$Gender <- replace(HK_sample$Gender, HK_sample$Gender == 3, NA)
+HK_sample$EDU <- replace(HK_sample$EDU, HK_sample$EDU == 4, NA)
+```
+
+```{r model}
+sem_model <- '
+  # 测量模型
+    PEOU =~ PEOU_1 + PEOU_2 + PEOU_3 + PEOU_4
+    PU =~ PU_2 + PU_3 + PU_5
+    AT =~ AT_1 + AT_2 + AT_4
+    BI =~ BI_1 + BI_2 + BI_3
+    SME =~ f1*Exposure_1 + f1*Exposure_2
+    PS =~ f2*PS_School + f2*PS_Lecturer
+  # single indicator factor
+    AUf =~ 1*AU
+  # variance of observed variable to 0
+    AU ~~ 0*AU
+  # 路径模型
+    PEOU ~ SME + PS + Age + Gender + EDU
+    PU ~ PEOU + SME + PS + Age + Gender + EDU
+    AT ~ PEOU + PU + Age + Gender + EDU
+    BI ~ AT + PU + Age + Gender + EDU
+    AUf ~ BI + Age + Gender + EDU
+'
+sem_fit <- sem(sem_model, data=HK_sample)
+summary(sem_fit,standardized=TRUE,rsquare=TRUE)
+```
+```{r Fit indices}
+round(fitMeasures(sem_fit, c("chisq","df","pvalue","cfi","rmsea","gfi","nfi","ifi","tli","ecvi")),2)
+```
+
+```{r plot}
+lavaanPlot(
+  model = sem_fit, 
+  node_options = list(shape = "box", fontname = "Helvetica"), 
+  edge_options = list(color = "grey"), 
+  coefs = T,
+  stand = T,
+)
+```
+## 中介
+```{r mediation}
+med_model <- '
+  # 测量模型
+    PEOU =~ PEOU_1 + PEOU_2 + PEOU_3 + PEOU_4
+    PU =~ PU_2 + PU_3 + PU_5
+    AT =~ AT_1 + AT_2 + AT_4
+    BI =~ BI_1 + BI_2 + BI_3
+    SME =~ f1*Exposure_1 + f1*Exposure_2
+    PS =~ f2*PS_School + f2*PS_Lecturer
+  # single indicator factor
+    AUf =~ 1*AU
+  # variance of observed variable to 0
+    AU ~~ 0*AU
+  # 直接效应
+    PEOU ~ SME + PS + Age + Gender + EDU
+    PU ~ b*PEOU + SME + PS + Age + Gender + EDU
+    AT ~ c*PEOU + d*PU + Age + Gender + EDU
+    BI ~ e*AT + f*PU + Age + Gender + EDU
+    AUf ~ BI + Age + Gender + EDU
+  # 间接效应
+    int1 := b*d
+    int2 := d*e
+  # 总效应
+    tol1 := c+int1
+    tol2 := f+int2
+'
+med_fit <- sem(med_model, data=HK_sample, se='bootstrap',bootstrap = 5000, iseed=2023)
+print(standardizedSolution(med_fit),
+      output = "text",standardized_only = FALSE)
+```
+
